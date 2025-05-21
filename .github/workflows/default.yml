@@ -1,0 +1,102 @@
+name: .NET Test
+
+on:
+  workflow_call:
+    inputs:
+      projects:
+        description: Optional path to the project(s) file to build. Supports globbing. Default is an empty string.
+        required: false
+        type: string
+        default: ''
+      configuration:
+        description: Defines the build configuration. Default is Release (to reduce risk of surprises when transitioning to Production).
+        required: false
+        type: string
+        default: 'Release'
+      include-preview:
+        description: When set to true, includes preview versions of .NET. Default is false.
+        required: false
+        type: boolean
+        default: false
+      verbosity-level:
+        description: Sets the verbosity level of the command. Allowed values are quiet, minimal, normal, detailed, and diagnostic. Default is quiet.
+        required: false
+        type: string
+        default: 'quiet'
+      coverage-report-folder-name:
+        description: The name of the folder where the coverage report will be written. Default is Coverage.
+        required: false
+        type: string
+        default: 'Coverage'
+      test-results-folder-name:
+        description: The name of the folder where the test results will be written. Default is TestResults.
+        required: false
+        type: string
+        default: 'TestResults'
+      build-switches:
+        description: Provides a way to fully customize the build. Default is an empty string. See https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-command-line-reference?view=vs-2022#switches for more information.
+        required: false
+        type: string
+        default: ''
+      restore-cache-key:
+        description: When set, the current workspace will be overwritten with the content of the restore cache. Default is an empty string.
+        required: false
+        type: string
+        default: ''
+      blame-hang-timeout:
+        description: The time to wait for a test to complete before collecting a dump. Default is 10 minutes.
+        required: false
+        type: string
+        default: '10m'
+      blame-hang-dump-type:
+        description: The type of dump to collect when a test hangs. Default is mini.
+        required: false
+        type: string
+        default: 'mini'
+      test-arguments:
+        description: Additional arguments to pass to the test runner. Default is an empty string.
+        required: false
+        type: string
+        default: ''
+      test-logs-folder-name:
+        description: The name of the folder where optional test logs will be written. Default is TestLogs.
+        required: false
+        type: string
+        default: 'TestLogs'
+      timeout-minutes:
+        description: The maximum time in minutes to allow the job to run. Default is 15 minutes.
+        required: false
+        type: number
+        default: 15
+
+jobs:
+  pack:
+    name: 🧪 Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - name: Checkout
+        uses: codebeltnet/git-checkout@v1
+
+      - name: Install .NET
+        uses: codebeltnet/install-dotnet@v2
+        with:
+          includePreview: ${{ inputs.include-preview }}
+
+      - name: Install .NET Tool - Report Generator
+        uses: codebeltnet/dotnet-tool-install-reportgenerator@v1
+
+      - name: Test with ${{ inputs.configuration }} build
+        uses: codebeltnet/dotnet-test@v3
+        with:
+          configuration: ${{ inputs.configuration }}
+          projects: ${{ inputs.projects }}
+          level: ${{ inputs.verbosity-level }}
+          coverageReportFolderName: ${{ inputs.coverage-report-folder-name }}
+          testResultsFolderName: ${{ inputs.test-results-folder-name }}
+          buildSwitches: ${{ inputs.build-switches }}
+          restoreCacheKey: ${{ inputs.restore-cache-key }}
+          blameHangTimeout: ${{ inputs.blame-hang-timeout }}
+          blameHangDumpType: ${{ inputs.blame-hang-dump-type }}
+          testArguments: ${{ inputs.test-arguments }}
+          testLogsFolderName: ${{ inputs.test-logs-folder-name }}
