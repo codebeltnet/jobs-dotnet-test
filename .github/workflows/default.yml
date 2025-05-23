@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: 'Release'
+      runs-on:
+        description: The type of machine to run the job on. Default is ubuntu-24.04.
+        required: false
+        type: string
+        default: 'ubuntu-24.04'
       include-preview:
         description: When set to true, includes preview versions of .NET. Default is false.
         required: false
@@ -67,7 +72,7 @@ on:
 jobs:
   pack:
     name: 🧪 Test
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       - name: Checkout

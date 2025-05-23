@@ -38,6 +38,8 @@ with:
   projects: ''
   # Defines the build configuration. Default is Release (to reduce risk of surprises when transitioning to Production).
   configuration: 'Release'
+  # The type of machine to run the job on. Default is ubuntu-24.04.
+  runs-on: 'ubuntu-24.04'
     # When set to true, includes preview versions of .NET. Default is false.
   include-preview: false
   # Sets the verbosity level of the command. Allowed values are quiet, minimal, normal, detailed, and diagnostic. Default is quiet.
