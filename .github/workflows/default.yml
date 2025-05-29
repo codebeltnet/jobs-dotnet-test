@@ -86,16 +86,64 @@ jobs:
       - name: Install .NET Tool - Report Generator
         uses: codebeltnet/dotnet-tool-install-reportgenerator@v1
 
+      - if: inputs.restore-cache-key != ''
+        name: Restore Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ github.workspace }}
+            !${{ github.workspace }}/.git
+            ~/.nuget/packages
+          key: ${{ inputs.restore-cache-key }}
+          restore-keys: |
+            dotnet-restore-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-${{ inputs.configuration }}'
+          merge-multiple: true
+
       - name: Test with ${{ inputs.configuration }} build
-        uses: codebeltnet/dotnet-test@v3
+        uses: codebeltnet/dotnet-test@v4
         with:
           configuration: ${{ inputs.configuration }}
           projects: ${{ inputs.projects }}
-          level: ${{ inputs.verbosity-level }}
-          coverageReportFolderName: ${{ inputs.coverage-report-folder-name }}
-          testResultsFolderName: ${{ inputs.test-results-folder-name }}
-          buildSwitches: ${{ inputs.build-switches }}
-          restoreCacheKey: ${{ inputs.restore-cache-key }}
-          blameHangTimeout: ${{ inputs.blame-hang-timeout }}
-          blameHangDumpType: ${{ inputs.blame-hang-dump-type }}
-          testArguments: ${{ inputs.test-arguments }}
+          verbosity-level: ${{ inputs.verbosity-level }}
+          test-results-folder-name: ${{ inputs.test-results-folder-name }}
+          build-switches: ${{ inputs.build-switches }}
+          blame-hang-timeout: ${{ inputs.blame-hang-timeout }}
+          blame-hang-dump-type: ${{ inputs.blame-hang-dump-type }}
+          test-arguments: ${{ inputs.test-arguments }}
+
+      - name: Use Report Generator
+        run: reportgenerator "-reports:$RUNNER_TEMP/${{ inputs.test-results-folder-name }}/**/*.opencover.xml" "-targetdir:${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}" "-reporttypes:Cobertura;MarkdownSummaryGithub;HTMLInline;HTMLChart"
+        shell: bash
+
+      - name: Write to Job Summary
+        if: success() && runner.os == 'Linux'
+        run: cat ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
+        shell: bash
+
+      - name: Write to Job Summary
+        if: success() && runner.os == 'Windows'
+        run: Get-Content ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}/SummaryGithub.md | Add-Content $env:GITHUB_STEP_SUMMARY
+        shell: pwsh
+
+      - name: Upload CoverageReport
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CoverageReport-${{ inputs.configuration }}-${{ runner.os }}-${{ hashFiles(inputs.projects) }}
+          path: ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}
+          include-hidden-files: true
+
+      - name: Upload TestResults
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults-${{ inputs.configuration }}-${{ runner.os }}-${{ hashFiles(inputs.projects) }}
+          path: ${{ runner.temp }}/${{ inputs.test-results-folder-name }}
+          include-hidden-files: true
