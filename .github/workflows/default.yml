@@ -70,7 +70,7 @@ on:
         default: 15
 
 jobs:
-  pack:
+  test:
     name: 🧪 Test
     runs-on: ${{ inputs.runs-on }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
