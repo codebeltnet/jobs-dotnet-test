@@ -66,6 +66,10 @@ with:
   test-arguments: ''
   # The name of the folder where optional test logs will be written. Default is TestLogs.
   test-logs-folder-name: 'TestLogs'
+  # Whether to build the project(s) before testing. Default is false.
+  build: false
+  # Whether to restore the project(s) before testing. Default is false.
+  restore: false
   # The maximum time in minutes to allow the job to run. Default is 15 minutes.
   timeout-minutes: 15
 ```

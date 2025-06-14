@@ -38,11 +38,21 @@ on:
         required: false
         type: string
         default: 'TestResults'
+      build:
+        description: Whether to build the project(s) before testing. Default is false.
+        required: false
+        type: boolean
+        default: false
       build-switches:
         description: Provides a way to fully customize the build. Default is an empty string. See https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-command-line-reference?view=vs-2022#switches for more information.
         required: false
         type: string
         default: ''
+      restore:
+        description: Whether to restore the project(s) before testing. Default is false.
+        required: false
+        type: boolean
+        default: false
       restore-cache-key:
         description: When set, the current workspace will be overwritten with the content of the restore cache. Default is an empty string.
         required: false
@@ -106,6 +116,21 @@ jobs:
           pattern: '*-${{ inputs.configuration }}'
           merge-multiple: true
 
+      - if: inputs.restore
+        name: Restore Dependencies
+        uses: codebeltnet/dotnet-restore@v3
+        with:
+          projects: ${{ inputs.projects }}
+          verbosity-level: ${{ inputs.verbosity-level }}
+    
+      - if: inputs.build
+        uses: codebeltnet/dotnet-build@v4
+        with:
+          projects: ${{ inputs.projects }}
+          configuration: ${{ inputs.configuration }}
+          verbosity-level: ${{ inputs.verbosity-level }}
+          build-switches: ${{ inputs.build-switches }}
+
       - name: Test with ${{ inputs.configuration }} build
         uses: codebeltnet/dotnet-test@v4
         with:
@@ -117,6 +142,8 @@ jobs:
           blame-hang-timeout: ${{ inputs.blame-hang-timeout }}
           blame-hang-dump-type: ${{ inputs.blame-hang-dump-type }}
           test-arguments: ${{ inputs.test-arguments }}
+          build: ${{ inputs.build }}
+          restore: ${{ inputs.restore }}
 
       - name: Use Report Generator
         run: reportgenerator "-reports:$RUNNER_TEMP/${{ inputs.test-results-folder-name }}/**/*.opencover.xml" "-targetdir:${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}" "-reporttypes:Cobertura;MarkdownSummaryGithub;HTMLInline;HTMLChart"
