@@ -146,8 +146,14 @@ jobs:
           build: ${{ inputs.build }}
           restore: ${{ inputs.restore }}
 
-      - name: Content of Test Results Folder
+      - if: success() && runner.os == 'Linux'
+        name: Content of Test Results Folder
         run: ls -R $RUNNER_TEMP/${{ inputs.test-results-folder-name }}
+
+      - if: success() && runner.os == 'Windows'
+        name: Content of Test Results Folder
+        shell: pwsh
+        run: Get-ChildItem -Path "$env:RUNNER_TEMP\${{ inputs.test-results-folder-name }}" -Recurse
 
       - name: Use Report Generator
         run: reportgenerator "-reports:$RUNNER_TEMP/${{ inputs.test-results-folder-name }}/**/*.opencover.xml" "-targetdir:${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}" "-reporttypes:Cobertura;MarkdownSummaryGithub;HTMLInline;HTMLChart"
