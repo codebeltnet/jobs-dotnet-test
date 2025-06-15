@@ -124,6 +124,7 @@ jobs:
           verbosity-level: ${{ inputs.verbosity-level }}
     
       - if: inputs.build
+        name: Build with ${{ inputs.configuration }} configuration
         uses: codebeltnet/dotnet-build@v4
         with:
           projects: ${{ inputs.projects }}
@@ -144,6 +145,16 @@ jobs:
           test-arguments: ${{ inputs.test-arguments }}
           build: ${{ inputs.build }}
           restore: ${{ inputs.restore }}
+
+      - name: Debug Test Results Directory
+        run: ls -R $RUNNER_TEMP/${{ inputs.test-results-folder-name }}
+
+      - name: Validate OpenCover Reports
+        run: |
+          if [ ! -f "$RUNNER_TEMP/${{ inputs.test-results-folder-name }}/**/*.opencover.xml" ]; then
+            echo "No OpenCover reports found!"
+            exit 1
+          fi
 
       - name: Use Report Generator
         run: reportgenerator "-reports:$RUNNER_TEMP/${{ inputs.test-results-folder-name }}/**/*.opencover.xml" "-targetdir:${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}" "-reporttypes:Cobertura;MarkdownSummaryGithub;HTMLInline;HTMLChart"
