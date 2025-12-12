@@ -135,13 +135,99 @@ jobs:
       - if: runner.os == 'Linux'
         name: Fix Linux test apphost permissions
         run: |
-          echo "Ensuring xUnit v3 test apphosts are executable on Linux..."
-          echo "Configuration: ${{ inputs.configuration }}"
-          # Dump a bit of info for debugging
-          find . -path "*/bin/${{ inputs.configuration }}/net*/*" -maxdepth 1 -type f -name "*Tests*" -print || true
-          # Actually fix permissions
-          find . -path "*/bin/${{ inputs.configuration }}/net*/*" -type f -name "*Tests*" -exec chmod +x {} +
-          echo "Permissions fixed."
+          set -euo pipefail
+
+          VERBOSITY="${{ inputs.verbosity-level }}"
+          CONFIG="${{ inputs.configuration }}"
+
+          echo "Linux test executable handling"
+          echo "Configuration: $CONFIG"
+          echo "Verbosity level: $VERBOSITY"
+          echo
+
+          BIN_GLOB="*/bin/$CONFIG/net*/*"
+          OBJ_GLOB="*/obj/$CONFIG/net*/*"
+
+          echo "=== Brute-force chmod (always) ==="
+          find . -type f \( -path "$BIN_GLOB" -o -path "$OBJ_GLOB" \) -exec chmod a+x {} + 2>/dev/null || true
+          echo "chmod completed."
+          echo
+
+          case "$VERBOSITY" in
+            diag|diagnostic)
+              echo "=== Diagnostic mode enabled ==="
+              echo
+
+              echo "--- Runner / context ---"
+              echo "Runner: $RUNNER_OS / $RUNNER_ARCH"
+              echo "Workspace: $GITHUB_WORKSPACE"
+              echo "PWD: $(pwd)"
+              echo "Event: $GITHUB_EVENT_NAME"
+              echo "Ref: $GITHUB_REF"
+              echo "SHA: $GITHUB_SHA"
+              echo
+
+              echo "--- .NET info ---"
+              dotnet --info || true
+              echo
+
+              echo "--- Git state ---"
+              git rev-parse HEAD || true
+              git status --porcelain || true
+              git rev-parse --is-shallow-repository || true
+              echo
+
+              echo "--- Mount options (noexec check) ---"
+              mount | sed -n '1,200p' || true
+              echo
+
+              echo "--- Candidate executables (bin) ---"
+              find . -type f -path "$BIN_GLOB" \
+                ! -name "*.dll" ! -name "*.pdb" ! -name "*.json" \
+                -printf "%m %u:%g %s %p\n" | head -n 200 || true
+              echo
+
+              echo "--- Likely test hosts / apphosts ---"
+              find . -type f -path "$BIN_GLOB" \( \
+                  -name "testhost*" -o \
+                  -name "*xunit*" -o \
+                  -name "*Tests*" \
+                \) -printf "%m %u:%g %s %p\n" | head -n 200 || true
+              echo
+
+              echo "--- Deep diagnostics (file / ELF / shebang) ---"
+              while IFS= read -r f; do
+                echo ">>> $f"
+                ls -la "$f" || true
+                file -L "$f" || true
+
+                if file -L "$f" | grep -q "ELF"; then
+                  echo "readelf -l:"
+                  readelf -l "$f" 2>/dev/null | sed -n '1,80p' || true
+                  echo "ldd:"
+                  ldd "$f" 2>/dev/null || true
+                fi
+
+                if head -c 2 "$f" 2>/dev/null | grep -q "#!"; then
+                  echo "shebang:"
+                  head -n 1 "$f" | cat -A || true
+                fi
+
+                echo
+              done < <(
+                find . -type f -path "$BIN_GLOB" \( \
+                  -name "testhost*" -o \
+                  -name "*xunit*" -o \
+                  -name "*Tests*" \
+                \) | head -n 50
+              ) || true
+
+              echo "=== End diagnostic mode ==="
+              ;;
+            *)
+              echo "Diagnostic mode disabled (verbosity-level != diag|diagnostic)."
+              ;;
+          esac
         shell: bash
 
       - name: Test with ${{ inputs.configuration }} build
