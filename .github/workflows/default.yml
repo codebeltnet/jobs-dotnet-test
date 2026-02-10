@@ -138,18 +138,13 @@ jobs:
           set -euo pipefail
 
           VERBOSITY="${{ inputs.verbosity-level }}"
-          CONFIG="${{ inputs.configuration }}"
 
           echo "Linux test executable handling"
-          echo "Configuration: $CONFIG"
           echo "Verbosity level: $VERBOSITY"
           echo
 
-          BIN_GLOB="*/bin/$CONFIG/net*/*"
-          OBJ_GLOB="*/obj/$CONFIG/net*/*"
-
-          echo "=== Brute-force chmod (always) ==="
-          find . -type f \( -path "$BIN_GLOB" -o -path "$OBJ_GLOB" \) -exec chmod a+x {} + 2>/dev/null || true
+          echo "=== Brute-force chmod (all bin + obj) ==="
+          find . -type f \( -path "*/bin/*" -o -path "*/obj/*" \) -exec chmod a+x {} + 2>/dev/null || true
           echo "chmod completed."
           echo
 
@@ -178,32 +173,38 @@ jobs:
               echo
 
               echo "--- Mount options (noexec check) ---"
-              mount | sed -n '1,200p' || true
+              mount | head -n 200 || true
               echo
 
-              echo "--- Candidate executables (bin) ---"
-              find . -type f -path "$BIN_GLOB" \
-                ! -name "*.dll" ! -name "*.pdb" ! -name "*.json" \
-                -printf "%m %u:%g %s %p\n" | head -n 200 || true
+              echo "--- Candidate executables (bin + obj) ---"
+              find . -type f \( -path "*/bin/*" -o -path "*/obj/*" \) \
+                ! -name "*.dll" ! -name "*.pdb" ! -name "*.json" ! -name "*.xml" \
+                -printf "%m %u:%g %s %p\n" 2>/dev/null | head -n 200 || true
               echo
 
               echo "--- Likely test hosts / apphosts ---"
-              find . -type f -path "$BIN_GLOB" \( \
+              find . -type f \( -path "*/bin/*" -o -path "*/obj/*" \) \( \
                   -name "testhost*" -o \
                   -name "*xunit*" -o \
-                  -name "*Tests*" \
-                \) -printf "%m %u:%g %s %p\n" | head -n 200 || true
+                  -name "*Tests*" -o \
+                  -name "*Tests" \
+                \) -printf "%m %u:%g %s %p\n" 2>/dev/null | head -n 200 || true
               echo
 
               echo "--- Deep diagnostics (file / ELF / shebang) ---"
-              while IFS= read -r f; do
+              find . -type f \( -path "*/bin/*" -o -path "*/obj/*" \) \( \
+                  -name "testhost*" -o \
+                  -name "*xunit*" -o \
+                  -name "*Tests*" -o \
+                  -name "*Tests" \
+                \) 2>/dev/null | head -n 50 | while IFS= read -r f; do
                 echo ">>> $f"
-                ls -la "$f" || true
-                file -L "$f" || true
+                ls -la "$f" 2>/dev/null || true
+                file -L "$f" 2>/dev/null || true
 
-                if file -L "$f" | grep -q "ELF"; then
+                if file -L "$f" 2>/dev/null | grep -q "ELF"; then
                   echo "readelf -l:"
-                  readelf -l "$f" 2>/dev/null | sed -n '1,80p' || true
+                  readelf -l "$f" 2>/dev/null | head -n 80 || true
                   echo "ldd:"
                   ldd "$f" 2>/dev/null || true
                 fi
@@ -214,13 +215,7 @@ jobs:
                 fi
 
                 echo
-              done < <(
-                find . -type f -path "$BIN_GLOB" \( \
-                  -name "testhost*" -o \
-                  -name "*xunit*" -o \
-                  -name "*Tests*" \
-                \) | head -n 50
-              ) || true
+              done || true
 
               echo "=== End diagnostic mode ==="
               ;;
