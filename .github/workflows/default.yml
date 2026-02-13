@@ -79,10 +79,10 @@ on:
         type: number
         default: 15
       download-pattern:
-        description: The pattern to use when downloading build artifacts. Default is '*-${{ inputs.configuration }}'.
+        description: The pattern to use when downloading build artifacts. Default is '*-' suffix with the configuration.
         required: false
         type: string
-        default: '*-${{ inputs.configuration }}'
+        default: ''
 
 jobs:
   test:
@@ -118,7 +118,7 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: ${{ inputs.download-pattern }}
+          pattern: ${{ inputs.download-pattern != '' && inputs.download-pattern || format('*-{0}', inputs.configuration) }}
           merge-multiple: true
 
       - if: inputs.restore
