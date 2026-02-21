@@ -244,11 +244,11 @@ jobs:
           build: ${{ inputs.build }}
           restore: ${{ inputs.restore }}
 
-      - if: success() && runner.os == 'Linux'
+      - if: always() && runner.os == 'Linux'
         name: Content of Test Results Folder
         run: ls -R $RUNNER_TEMP/${{ inputs.test-results-folder-name }}
 
-      - if: success() && runner.os == 'Windows'
+      - if: always() && runner.os == 'Windows'
         name: Content of Test Results Folder
         shell: pwsh
         run: Get-ChildItem -Path "$env:RUNNER_TEMP\${{ inputs.test-results-folder-name }}" -Recurse
@@ -258,17 +258,17 @@ jobs:
         shell: bash
 
       - name: Write to Job Summary
-        if: success() && runner.os == 'Linux'
+        if: always() && runner.os == 'Linux'
         run: cat ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
         shell: bash
 
       - name: Write to Job Summary
-        if: success() && runner.os == 'Windows'
+        if: always() && runner.os == 'Windows'
         run: Get-Content ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}/SummaryGithub.md | Add-Content $env:GITHUB_STEP_SUMMARY
         shell: pwsh
 
       - name: Upload CoverageReport
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: CoverageReport-${{ inputs.configuration }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(inputs.projects) }}
@@ -276,7 +276,7 @@ jobs:
           include-hidden-files: true
 
       - name: Upload TestResults
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: TestResults-${{ inputs.configuration }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(inputs.projects) }}
