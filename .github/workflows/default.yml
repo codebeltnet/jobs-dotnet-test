@@ -248,6 +248,10 @@ jobs:
         name: Content of Test Results Folder
         run: ls -R $RUNNER_TEMP/${{ inputs.test-results-folder-name }}
 
+      - if: always() && runner.os == 'macOS'
+        name: Content of Test Results Folder
+        run: ls -R $RUNNER_TEMP/${{ inputs.test-results-folder-name }}
+
       - if: always() && runner.os == 'Windows'
         name: Content of Test Results Folder
         shell: pwsh
@@ -259,6 +263,11 @@ jobs:
 
       - name: Write to Job Summary
         if: always() && runner.os == 'Linux'
+        run: cat ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
+        shell: bash
+
+      - name: Write to Job Summary
+        if: always() && runner.os == 'macOS'
         run: cat ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
         shell: bash
 
