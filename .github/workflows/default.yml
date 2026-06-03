@@ -103,7 +103,7 @@ jobs:
 
       - if: inputs.restore-cache-key != ''
         name: Restore Cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ github.workspace }}
@@ -116,7 +116,7 @@ jobs:
           fail-on-cache-miss: true
 
       - name: Download Build Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: ${{ inputs.download-pattern != '' && inputs.download-pattern || format('*-{0}', inputs.configuration) }}
           merge-multiple: true
@@ -269,7 +269,7 @@ jobs:
 
       - name: Upload CoverageReport
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: CoverageReport-${{ inputs.configuration }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(inputs.projects) }}
           path: ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}
@@ -277,7 +277,7 @@ jobs:
 
       - name: Upload TestResults
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TestResults-${{ inputs.configuration }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(inputs.projects) }}
           path: ${{ runner.temp }}/${{ inputs.test-results-folder-name }}
