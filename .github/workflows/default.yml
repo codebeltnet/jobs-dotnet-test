@@ -244,6 +244,140 @@ jobs:
           build: ${{ inputs.build }}
           restore: ${{ inputs.restore }}
 
+      - name: Write Failed Test Details
+        if: failure()
+        shell: pwsh
+        run: |
+          $testResultsPath = Join-Path $env:RUNNER_TEMP '${{ inputs.test-results-folder-name }}'
+          $trxFiles = @(Get-ChildItem -LiteralPath $testResultsPath -Filter '*.trx' -Recurse -File -ErrorAction SilentlyContinue)
+
+          if ($trxFiles.Count -eq 0) {
+            Write-Host "No TRX files found in '$testResultsPath'."
+            exit 0
+          }
+
+          function Get-NodeText {
+            param([System.Xml.XmlNode] $Node)
+
+            if ($null -eq $Node -or [string]::IsNullOrWhiteSpace($Node.InnerText)) {
+              return ''
+            }
+
+            return $Node.InnerText.Trim()
+          }
+
+          function Limit-Text {
+            param(
+              [string] $Text,
+              [int] $MaxLength = 12000
+            )
+
+            if ([string]::IsNullOrWhiteSpace($Text)) {
+              return ''
+            }
+
+            $trimmed = $Text.Trim()
+            if ($trimmed.Length -le $MaxLength) {
+              return $trimmed
+            }
+
+            return "$($trimmed.Substring(0, $MaxLength))`n... truncated ..."
+          }
+
+          function Add-CodeBlock {
+            param(
+              [string] $Path,
+              [string] $Text
+            )
+
+            $safeText = Limit-Text -Text $Text
+            if ([string]::IsNullOrWhiteSpace($safeText)) {
+              Add-Content -LiteralPath $Path -Value '_No details were written to the TRX file._'
+              return
+            }
+
+            Add-Content -LiteralPath $Path -Value '```text'
+            Add-Content -LiteralPath $Path -Value ($safeText -replace '```', '`` `')
+            Add-Content -LiteralPath $Path -Value '```'
+          }
+
+          $failures = [System.Collections.Generic.List[object]]::new()
+
+          foreach ($trxFile in $trxFiles) {
+            try {
+              [xml] $trx = Get-Content -LiteralPath $trxFile.FullName -Raw
+            }
+            catch {
+              Write-Warning "Could not read TRX file '$($trxFile.FullName)': $_"
+              continue
+            }
+
+            $testDefinitions = @{}
+            foreach ($unitTest in @($trx.SelectNodes("//*[local-name()='UnitTest']"))) {
+              $method = $unitTest.SelectSingleNode("./*[local-name()='TestMethod']")
+              if ($null -ne $method -and -not [string]::IsNullOrWhiteSpace($unitTest.id)) {
+                $testDefinitions[$unitTest.id] = [pscustomobject]@{
+                  ClassName = $method.className
+                  MethodName = $method.name
+                }
+              }
+            }
+
+            foreach ($result in @($trx.SelectNodes("//*[local-name()='UnitTestResult' and @outcome='Failed']"))) {
+              $definition = $null
+              if (-not [string]::IsNullOrWhiteSpace($result.testId) -and $testDefinitions.ContainsKey($result.testId)) {
+                $definition = $testDefinitions[$result.testId]
+              }
+
+              $testName = $result.testName
+              if ($null -ne $definition -and -not [string]::IsNullOrWhiteSpace($definition.ClassName) -and -not [string]::IsNullOrWhiteSpace($definition.MethodName)) {
+                $testName = "$($definition.ClassName).$($definition.MethodName)"
+              }
+
+              if ([string]::IsNullOrWhiteSpace($testName)) {
+                $testName = 'Unknown test'
+              }
+
+              $message = Get-NodeText -Node $result.SelectSingleNode("./*[local-name()='Output']/*[local-name()='ErrorInfo']/*[local-name()='Message']")
+              $stackTrace = Get-NodeText -Node $result.SelectSingleNode("./*[local-name()='Output']/*[local-name()='ErrorInfo']/*[local-name()='StackTrace']")
+
+              $failures.Add([pscustomobject]@{
+                Name = $testName
+                Duration = $result.duration
+                Message = $message
+                StackTrace = $stackTrace
+                TrxFile = $trxFile.FullName
+              })
+            }
+          }
+
+          if ($failures.Count -eq 0) {
+            Write-Host "TRX files were found, but no failed UnitTestResult entries were present."
+            exit 0
+          }
+
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ''
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '## Failed Tests'
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ''
+
+          foreach ($failure in $failures) {
+            $name = ($failure.Name -replace "`r?`n", ' ').Trim()
+
+            Write-Host "::error title=Failed test::$name"
+
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### ``$name``"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ''
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Duration: ``$($failure.Duration)``"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Results file: ``$($failure.TrxFile)``"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ''
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '**Message**'
+            Add-CodeBlock -Path $env:GITHUB_STEP_SUMMARY -Text $failure.Message
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ''
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '**Stack trace**'
+            Add-CodeBlock -Path $env:GITHUB_STEP_SUMMARY -Text $failure.StackTrace
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ''
+          }
+
       - if: always() && runner.os == 'Linux'
         name: Content of Test Results Folder
         run: ls -R $RUNNER_TEMP/${{ inputs.test-results-folder-name }}
@@ -261,20 +395,26 @@ jobs:
         run: reportgenerator "-reports:$RUNNER_TEMP/${{ inputs.test-results-folder-name }}/**/*.opencover.xml" "-targetdir:${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}" "-reporttypes:Cobertura;MarkdownSummaryGithub;HTMLInline;HTMLChart"
         shell: bash
 
-      - name: Write to Job Summary
-        if: always() && runner.os == 'Linux'
-        run: cat ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
-        shell: bash
-
-      - name: Write to Job Summary
-        if: always() && runner.os == 'macOS'
-        run: cat ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
-        shell: bash
-
-      - name: Write to Job Summary
-        if: always() && runner.os == 'Windows'
-        run: Get-Content ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}/SummaryGithub.md | Add-Content $env:GITHUB_STEP_SUMMARY
+      - name: Find Coverage Summary
+        if: always()
+        id: coverage-summary
         shell: pwsh
+        run: |
+          $summaryPath = Join-Path '${{ github.workspace }}' '${{ inputs.coverage-report-folder-name }}/SummaryGithub.md'
+
+          if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) {
+            "exists=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Coverage summary '$summaryPath' was not found."
+            exit 0
+          }
+
+          "exists=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "path=$summaryPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Write Coverage Summary
+        if: always() && steps.coverage-summary.outputs.exists == 'true'
+        shell: pwsh
+        run: Get-Content -LiteralPath '${{ steps.coverage-summary.outputs.path }}' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
       - name: Upload CoverageReport
         if: always()
