@@ -301,6 +301,77 @@ jobs:
             Add-Content -LiteralPath $Path -Value '```'
           }
 
+          function ConvertTo-WorkflowCommandData {
+            param([string] $Text)
+
+            if ($null -eq $Text) {
+              return ''
+            }
+
+            return $Text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+          }
+
+          function ConvertTo-WorkflowCommandProperty {
+            param([string] $Text)
+
+            return (ConvertTo-WorkflowCommandData -Text $Text).Replace(':', '%3A').Replace(',', '%2C')
+          }
+
+          function Write-FailedTestLog {
+            param([object] $Failure)
+
+            $name = ($Failure.Name -replace "`r?`n", ' ').Trim()
+            $message = Limit-Text -Text $Failure.Message
+            $stackTrace = Limit-Text -Text $Failure.StackTrace
+
+            Write-Host "::group::Failed test: $name"
+            $stopToken = [guid]::NewGuid().ToString('N')
+            Write-Host "::stop-commands::$stopToken"
+            try {
+              Write-Host "Duration: $($Failure.Duration)"
+              Write-Host "Results file: $($Failure.TrxFile)"
+              Write-Host ''
+
+              if (-not [string]::IsNullOrWhiteSpace($message)) {
+                Write-Host 'Message:'
+                Write-Host $message
+                Write-Host ''
+              }
+              else {
+                Write-Host 'Message: No details were written to the TRX file.'
+                Write-Host ''
+              }
+
+              if (-not [string]::IsNullOrWhiteSpace($stackTrace)) {
+                Write-Host 'Stack trace:'
+                Write-Host $stackTrace
+                Write-Host ''
+              }
+              else {
+                Write-Host 'Stack trace: No stack trace was written to the TRX file.'
+                Write-Host ''
+              }
+            }
+            finally {
+              Write-Host "::$stopToken::"
+              Write-Host '::endgroup::'
+            }
+
+            $annotation = @(
+              $name
+              ''
+              'Message:'
+              if (-not [string]::IsNullOrWhiteSpace($message)) { $message } else { 'No details were written to the TRX file.' }
+              ''
+              'Stack trace:'
+              if (-not [string]::IsNullOrWhiteSpace($stackTrace)) { $stackTrace } else { 'No stack trace was written to the TRX file.' }
+            ) -join "`n"
+
+            $title = ConvertTo-WorkflowCommandProperty -Text "Failed test: $name"
+            $details = ConvertTo-WorkflowCommandData -Text (Limit-Text -Text $annotation)
+            Write-Host "::error title=$title::$details"
+          }
+
           $failures = [System.Collections.Generic.List[object]]::new()
 
           foreach ($trxFile in $trxFiles) {
@@ -363,7 +434,7 @@ jobs:
           foreach ($failure in $failures) {
             $name = ($failure.Name -replace "`r?`n", ' ').Trim()
 
-            Write-Host "::error title=Failed test::$name"
+            Write-FailedTestLog -Failure $failure
 
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### ``$name``"
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ''
