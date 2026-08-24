@@ -286,26 +286,33 @@ jobs:
           echo "Using build/restore args: $build_restore_args"
 
           if [ "${{ inputs.projects }}" == "" ]; then
-              shopt -s globstar nullglob
+              # Apple ships Bash 3.2, which does not support globstar. Use find
+              # only for presence checks and let MTP evaluate the test-module
+              # glob expression below.
+              modern_module=$(find . -type f -path "*/bin/${{ inputs.configuration }}/net*.0/*Tests.dll" -print -quit)
+              framework_module=$(find . -type f -path "*/bin/${{ inputs.configuration }}/net4*/*Tests.exe" -print -quit)
+              found_modules=false
 
-              modern_modules=(**/bin/**/${{ inputs.configuration }}/net*.0/*Tests.dll)
-              if (( ${#modern_modules[@]} > 0 )); then
-                echo "Running ${#modern_modules[@]} modern test module(s) with native code coverage."
+              if [ -n "$modern_module" ]; then
+                found_modules=true
+                echo "Running modern test modules with native code coverage."
                 dotnet test --test-modules "**/bin/**/${{ inputs.configuration }}/net*.0/*Tests.dll" --max-parallel-test-modules 1 --verbosity ${{ inputs.verbosity-level }} --results-directory "$results_directory" --report-xunit-trx --coverage --coverage-output-format cobertura ${{ inputs.test-arguments }}
               fi
 
-              framework_modules=(**/bin/**/${{ inputs.configuration }}/net4*/*Tests.exe)
-              if (( ${#framework_modules[@]} > 0 )); then
-                echo "Running ${#framework_modules[@]} .NET Framework test module(s) without native code coverage."
+              if [ -n "$framework_module" ]; then
+                found_modules=true
+                echo "Running .NET Framework test modules without native code coverage."
                 dotnet test --test-modules "**/bin/**/${{ inputs.configuration }}/net4*/*Tests.exe" --max-parallel-test-modules 1 --verbosity ${{ inputs.verbosity-level }} --results-directory "$results_directory" --report-xunit-trx ${{ inputs.test-arguments }}
               fi
 
-              if (( ${#modern_modules[@]} == 0 && ${#framework_modules[@]} == 0 )); then
+              if [ "$found_modules" != true ]; then
                 echo "::error::No built test modules were found for the Microsoft.Testing.Platform run."
                 exit 1
               fi
           else
-              shopt -s globstar extglob
+              # Keep direct project paths working on Apple Bash 3.2. On Bash
+              # 4+, the existing recursive-glob behavior remains enabled.
+              shopt -s globstar extglob 2>/dev/null || true
               for file in ${{ inputs.projects }}; do
                 dotnet test --project "$file" $build_restore_args --configuration ${{ inputs.configuration }} --verbosity ${{ inputs.verbosity-level }} --results-directory "$results_directory" --report-xunit-trx --coverage --coverage-output-format cobertura -p:UseSourceLink=true ${{ inputs.build-switches }} ${{ inputs.test-arguments }}
                 echo "Tested and written results for '$file'"
