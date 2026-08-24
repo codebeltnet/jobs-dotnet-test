@@ -230,7 +230,28 @@ jobs:
           esac
         shell: bash
 
-      - name: Test with ${{ inputs.configuration }} build
+      - name: Detect Microsoft.Testing.Platform dotnet test experience
+        id: detect-mtp
+        shell: pwsh
+        run: |
+          $globalJsonPath = Join-Path $env:GITHUB_WORKSPACE 'global.json'
+          $useMtp = $false
+
+          if (Test-Path -LiteralPath $globalJsonPath -PathType Leaf) {
+            try {
+              $globalJson = Get-Content -LiteralPath $globalJsonPath -Raw | ConvertFrom-Json
+              $useMtp = $globalJson.test.runner -eq 'Microsoft.Testing.Platform'
+            }
+            catch {
+              throw "Could not inspect '$globalJsonPath' for the test runner: $_"
+            }
+          }
+
+          "use-mtp=$($useMtp.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Microsoft.Testing.Platform dotnet test experience enabled: $useMtp"
+
+      - if: steps.detect-mtp.outputs.use-mtp != 'true'
+        name: Test with ${{ inputs.configuration }} build
         uses: codebeltnet/dotnet-test@v4
         with:
           configuration: ${{ inputs.configuration }}
@@ -243,6 +264,53 @@ jobs:
           test-arguments: ${{ inputs.test-arguments }}
           build: ${{ inputs.build }}
           restore: ${{ inputs.restore }}
+
+      - if: steps.detect-mtp.outputs.use-mtp == 'true'
+        name: Test with ${{ inputs.configuration }} build using Microsoft.Testing.Platform
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          results_directory="$RUNNER_TEMP/${{ inputs.test-results-folder-name }}"
+          mkdir -p "$results_directory"
+
+          build_restore_args=""
+          if [[ "${{ inputs.restore }}" == "false" ]]; then
+            build_restore_args="$build_restore_args --no-restore"
+          fi
+          if [[ "${{ inputs.build }}" == "false" ]]; then
+            build_restore_args="$build_restore_args --no-build"
+          fi
+          build_restore_args="${build_restore_args#" "}"
+
+          echo "Using build/restore args: $build_restore_args"
+
+          if [ "${{ inputs.projects }}" == "" ]; then
+              shopt -s globstar nullglob
+
+              modern_modules=(**/bin/**/${{ inputs.configuration }}/net*.0/*Tests.dll)
+              if (( ${#modern_modules[@]} > 0 )); then
+                echo "Running ${#modern_modules[@]} modern test module(s) with native code coverage."
+                dotnet test --test-modules "**/bin/**/${{ inputs.configuration }}/net*.0/*Tests.dll" --max-parallel-test-modules 1 --verbosity ${{ inputs.verbosity-level }} --results-directory "$results_directory" --report-xunit-trx --coverage --coverage-output-format cobertura ${{ inputs.test-arguments }}
+              fi
+
+              framework_modules=(**/bin/**/${{ inputs.configuration }}/net4*/*Tests.exe)
+              if (( ${#framework_modules[@]} > 0 )); then
+                echo "Running ${#framework_modules[@]} .NET Framework test module(s) without native code coverage."
+                dotnet test --test-modules "**/bin/**/${{ inputs.configuration }}/net4*/*Tests.exe" --max-parallel-test-modules 1 --verbosity ${{ inputs.verbosity-level }} --results-directory "$results_directory" --report-xunit-trx ${{ inputs.test-arguments }}
+              fi
+
+              if (( ${#modern_modules[@]} == 0 && ${#framework_modules[@]} == 0 )); then
+                echo "::error::No built test modules were found for the Microsoft.Testing.Platform run."
+                exit 1
+              fi
+          else
+              shopt -s globstar extglob
+              for file in ${{ inputs.projects }}; do
+                dotnet test --project "$file" $build_restore_args --configuration ${{ inputs.configuration }} --verbosity ${{ inputs.verbosity-level }} --results-directory "$results_directory" --report-xunit-trx --coverage --coverage-output-format cobertura -p:UseSourceLink=true ${{ inputs.build-switches }} ${{ inputs.test-arguments }}
+                echo "Tested and written results for '$file'"
+              done
+          fi
 
       - name: Write Failed Test Details
         if: failure()
@@ -462,8 +530,22 @@ jobs:
         shell: pwsh
         run: Get-ChildItem -Path "$env:RUNNER_TEMP\${{ inputs.test-results-folder-name }}" -Recurse
 
+      - name: Find Coverage Files
+        if: always()
+        id: coverage-files
+        shell: pwsh
+        run: |
+          $testResultsPath = Join-Path $env:RUNNER_TEMP '${{ inputs.test-results-folder-name }}'
+          $coverageFiles = @(
+            Get-ChildItem -LiteralPath $testResultsPath -Include '*.opencover.xml', '*.cobertura.xml' -Recurse -File -ErrorAction SilentlyContinue
+          )
+
+          "exists=$($coverageFiles.Count -gt 0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Found $($coverageFiles.Count) coverage file(s) in '$testResultsPath'."
+
       - name: Use Report Generator
-        run: reportgenerator "-reports:$RUNNER_TEMP/${{ inputs.test-results-folder-name }}/**/*.opencover.xml" "-targetdir:${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}" "-reporttypes:Cobertura;MarkdownSummaryGithub;HTMLInline;HTMLChart"
+        if: success() && steps.coverage-files.outputs.exists == 'true'
+        run: reportgenerator "-reports:$RUNNER_TEMP/${{ inputs.test-results-folder-name }}/**/*.opencover.xml;$RUNNER_TEMP/${{ inputs.test-results-folder-name }}/**/*.cobertura.xml" "-targetdir:${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}" "-reporttypes:Cobertura;MarkdownSummaryGithub;HTMLInline;HTMLChart"
         shell: bash
 
       - name: Find Coverage Summary
@@ -494,6 +576,7 @@ jobs:
           name: CoverageReport-${{ inputs.configuration }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(inputs.projects) }}
           path: ${{ github.workspace }}/${{ inputs.coverage-report-folder-name }}
           include-hidden-files: true
+          if-no-files-found: warn
 
       - name: Upload TestResults
         if: always()
