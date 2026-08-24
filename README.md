@@ -21,7 +21,7 @@ This repository contains reusable workflows for interacting with .NET CLI `test`
   - [installs the Report Generator for .NET tool](https://github.com/codebeltnet/dotnet-tool-install-reportgenerator),
   - conditionally restores cached content,
   - downloads build artifacts,
-  - [test the solution](https://github.com/codebeltnet/dotnet-test),
+  - [tests the solution](https://github.com/codebeltnet/dotnet-test) with the legacy runner arguments by default, or with Microsoft.Testing.Platform-native arguments when the repository opts in through `global.json`,
   - generates a coverage report using ReportGenerator,
   - writes to GitHub job summary,
   - uploads the coverage report as workflow artifacts,
@@ -77,6 +77,18 @@ with:
 #### Secrets
 
 This workflow has no secrets.
+
+Repositories using the .NET 10+ Microsoft.Testing.Platform `dotnet test` experience must opt in from the repository root with:
+
+```json
+{
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
+  }
+}
+```
+
+Those repositories must also reference `Microsoft.Testing.Extensions.CodeCoverage` in their test projects for the coverage options used by this workflow. Modern .NET test modules use native coverage; .NET Framework test modules are still executed and reported, but do not use the native coverage collector.
 
 #### Outputs
 
