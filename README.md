@@ -21,7 +21,7 @@ This repository contains reusable workflows for interacting with .NET CLI `test`
   - [installs the Report Generator for .NET tool](https://github.com/codebeltnet/dotnet-tool-install-reportgenerator),
   - conditionally restores cached content,
   - downloads build artifacts,
-  - [tests the solution](https://github.com/codebeltnet/dotnet-test) with the legacy runner arguments by default, or with Microsoft.Testing.Platform-native arguments when the repository opts in through `global.json`,
+  - [tests the solution](https://github.com/codebeltnet/dotnet-test) through the action, which selects VSTest or Microsoft.Testing.Platform from the repository's `global.json`,
   - generates a coverage report using ReportGenerator,
   - writes to GitHub job summary,
   - uploads the coverage report as workflow artifacts,
